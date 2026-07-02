@@ -144,9 +144,11 @@ export function generateWeeklyAssignment(state: AppState, weekStart: string): Ge
       })
       pool = pool.filter((u) => u.id !== resting.id)
     }
-    // El resto (si queda alguien más) apoya rotando por zonas.
+    // El resto (si queda alguien más) apoya rotando por zonas. Si no hay ninguna
+    // zona activa no hay nada que rotar, así que no se genera "apoyo" para nadie.
     let i = 0
     for (const user of pool) {
+      if (zones.length === 0) break
       const zone = zones[i % zones.length]
       assignments.push({
         id: generateId(),

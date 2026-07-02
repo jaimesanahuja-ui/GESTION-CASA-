@@ -9,7 +9,7 @@ import { formatDateEs } from '../../lib/dateUtils'
 import { penaltyTriggeredMessage } from '../../lib/messages'
 
 export function StrikesView() {
-  const { state, completePenalty } = useApp()
+  const { state, completePenalty, undoStrike } = useApp()
   const pendingPenalties = state.penalties.filter((p) => p.status === 'pendiente')
   const completedPenalties = [...state.penalties]
     .filter((p) => p.status === 'cumplida')
@@ -29,9 +29,20 @@ export function StrikesView() {
                 <Avatar name={u.name} avatar={u.avatar} size="sm" />
                 {u.name}
               </span>
-              <Badge tone={u.strikes >= state.settings.strikesThreshold ? 'danger' : u.strikes > 0 ? 'warn' : 'ok'}>
-                {u.strikes}/{state.settings.strikesThreshold}
-              </Badge>
+              <span className="flex items-center gap-2">
+                {u.strikes > 0 && (
+                  <button
+                    onClick={() => undoStrike(u.id)}
+                    className="text-xs font-semibold text-ink-500 hover:text-brand-600 hover:underline"
+                    title="Deshacer el último strike"
+                  >
+                    ↩️ Deshacer
+                  </button>
+                )}
+                <Badge tone={u.strikes >= state.settings.strikesThreshold ? 'danger' : u.strikes > 0 ? 'warn' : 'ok'}>
+                  {u.strikes}/{state.settings.strikesThreshold}
+                </Badge>
+              </span>
             </li>
           ))}
         </ul>

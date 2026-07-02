@@ -6,15 +6,17 @@ export type TabId =
   | 'lostitems'
   | 'ranking'
   | 'strikes'
+  | 'expenses'
   | 'settings'
 
-export const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'dashboard', label: 'Inicio', icon: '🏠' },
-  { id: 'guardians', label: 'Guardianes', icon: '🛡️' },
-  { id: 'inspections', label: 'Inspección', icon: '🔍' },
-  { id: 'incidents', label: 'Incidencias', icon: '📸' },
-  { id: 'lostitems', label: 'Perdidos', icon: '🧦' },
-  { id: 'ranking', label: 'Ranking', icon: '🏆' },
-  { id: 'strikes', label: 'Strikes', icon: '❌' },
-  { id: 'settings', label: 'Ajustes', icon: '⚙️' },
+export const TABS: { id: TabId; label: string }[] = [
+  { id: 'dashboard', label: 'Inicio' },
+  { id: 'guardians', label: 'Guardianes' },
+  { id: 'inspections', label: 'Inspección' },
+  { id: 'incidents', label: 'Incidencias' },
+  { id: 'lostitems', label: 'Perdidos' },
+  { id: 'ranking', label: 'Ranking' },
+  { id: 'strikes', label: 'Strikes' },
+  { id: 'expenses', label: 'Gastos' },
+  { id: 'settings', label: 'Ajustes' },
 ]

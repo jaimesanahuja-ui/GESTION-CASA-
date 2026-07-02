@@ -1,13 +1,14 @@
 import type { ButtonHTMLAttributes } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dark'
 type Size = 'sm' | 'md'
 
 const VARIANT_CLASSES: Record<Variant, string> = {
-  primary: 'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 shadow-sm shadow-brand-500/30',
-  secondary: 'bg-brand-100 text-brand-700 hover:bg-brand-200',
+  primary: 'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700',
+  secondary: 'bg-brand-50 text-brand-500 hover:bg-brand-100',
   ghost: 'bg-transparent text-ink-700 hover:bg-ink-500/10',
   danger: 'bg-danger-500 text-white hover:bg-danger-600',
+  dark: 'bg-ink-950 text-white hover:bg-ink-900',
 }
 
 const SIZE_CLASSES: Record<Size, string> = {

@@ -4,17 +4,20 @@ import { Card, CardTitle } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { Avatar } from '../ui/Avatar'
-import { getConfigurableZones } from '../../lib/zones'
+import { getConfigurableZones, getRotationZones } from '../../lib/zones'
 import { isRemoteSyncConfigured } from '../../lib/remoteStorage'
+import { DeleteUserModal } from './DeleteUserModal'
+import type { User } from '../../types'
 
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? 'bg-brand-500' : 'bg-ink-500/20'}`}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${checked ? 'bg-brand-500' : 'bg-ink-500/20'}`}
     >
       <span
         className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`}
@@ -30,6 +33,7 @@ export function SettingsView() {
   const { state, syncStatus, updateSettings, addUser, updateUser, toggleUserActive, toggleZoneActive } = useApp()
   const [newUserName, setNewUserName] = useState('')
   const [newUserAvatar, setNewUserAvatar] = useState('')
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const zones = getConfigurableZones(state)
   const remoteConfigured = isRemoteSyncConfigured()
 
@@ -52,7 +56,7 @@ export function SettingsView() {
         ) : (
           <p className="text-sm text-ink-700">
             De momento cada dispositivo guarda sus propios datos (localStorage). Para compartir la casa entre todo
-            el piso, despliega la app en Vercel con una base de datos Redis (ver README, sección "Desplegar en
+            el piso, despliega la app en Vercel con una base de datos Postgres (ver README, sección "Desplegar en
             Vercel con datos compartidos").
           </p>
         )}
@@ -87,9 +91,20 @@ export function SettingsView() {
               >
                 {u.active ? 'Activo' : 'Inactivo'}
               </button>
+              <button
+                onClick={() => setUserToDelete(u)}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-danger-500 hover:bg-danger-50"
+                aria-label={`Eliminar a ${u.name}`}
+              >
+                🗑️
+              </button>
             </li>
           ))}
         </ul>
+        <p className="mb-3 text-xs text-ink-500">
+          "Activo/Inactivo" es para pausas temporales (no cuenta en el reparto semanal, pero sigue en el historial).
+          Para quitar a alguien que se ha ido del piso, usa 🗑️ eliminar.
+        </p>
         <div className="flex gap-2">
           <input
             className={`${FIELD} w-16 text-center`}
@@ -121,15 +136,19 @@ export function SettingsView() {
       <Card>
         <CardTitle>🧭 Zonas activas</CardTitle>
         <ul className="flex flex-col gap-2">
-          {zones.map((z) => (
-            <li key={z.id} className="flex items-center justify-between rounded-lg bg-brand-50 px-3 py-2">
-              <span className="text-sm font-semibold">
-                {z.icon} {z.name}
-              </span>
-              <Toggle checked={z.active} onChange={() => toggleZoneActive(z.id)} />
-            </li>
-          ))}
+          {zones.map((z) => {
+            const isLastActive = z.active && getRotationZones(state).length <= 1
+            return (
+              <li key={z.id} className="flex items-center justify-between rounded-lg bg-brand-50 px-3 py-2">
+                <span className="text-sm font-semibold">
+                  {z.icon} {z.name}
+                </span>
+                <Toggle checked={z.active} onChange={() => toggleZoneActive(z.id)} disabled={isLastActive} />
+              </li>
+            )
+          })}
         </ul>
+        <p className="mt-2 text-xs text-ink-500">Tiene que quedar al menos una zona activa para poder repartir guardianes.</p>
         <div className="mt-3 flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold">Dividir el baño en dos guardianes</p>
@@ -221,6 +240,8 @@ export function SettingsView() {
           placeholder="Cena pagada, cervezas, elige zona primero…"
         />
       </Card>
+
+      {userToDelete && <DeleteUserModal user={userToDelete} onClose={() => setUserToDelete(null)} />}
     </div>
   )
 }

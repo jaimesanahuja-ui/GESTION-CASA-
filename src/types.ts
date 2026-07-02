@@ -145,6 +145,15 @@ export interface Settings {
   allowRestWeek: boolean
 }
 
+export interface Expense {
+  id: string
+  date: string
+  description: string
+  amount: number // en euros
+  paidBy: string // userId
+  splitBetween: string[] // userIds entre los que se reparte, a partes iguales
+}
+
 export interface AppState {
   users: User[]
   zones: Zone[]
@@ -155,6 +164,7 @@ export interface AppState {
   lostItems: LostItem[]
   penalties: Penalty[]
   monthSummaries: MonthSummary[]
+  expenses: Expense[]
   settings: Settings
   /** Semanas (weekStart) para las que ya se repartieron los +1 punto, para no duplicarlos. */
   evaluatedWeeks: string[]

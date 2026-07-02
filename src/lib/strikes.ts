@@ -29,3 +29,20 @@ export function giveStrike(user: User, settings: Settings, hasPendingPenalty: bo
 export function completePenalty(user: User): User {
   return { ...user, strikes: 0 }
 }
+
+/** Quita 1 strike (mínimo 0). Si con eso ya no llega al umbral, retira también
+ * cualquier penalización pendiente que ese strike hubiera disparado. */
+export function revertStrike(
+  users: User[],
+  penalties: Penalty[],
+  userId: string,
+  threshold: number,
+): { users: User[]; penalties: Penalty[] } {
+  const user = users.find((u) => u.id === userId)
+  if (!user || user.strikes <= 0) return { users, penalties }
+  const newStrikes = user.strikes - 1
+  const nextUsers = users.map((u) => (u.id === userId ? { ...u, strikes: newStrikes } : u))
+  const nextPenalties =
+    newStrikes < threshold ? penalties.filter((p) => !(p.userId === userId && p.status === 'pendiente')) : penalties
+  return { users: nextUsers, penalties: nextPenalties }
+}

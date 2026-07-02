@@ -127,7 +127,19 @@ export function createInitialState(): AppState {
     lostItems: [],
     penalties: [],
     monthSummaries: [],
+    expenses: [],
     settings: DEFAULT_SETTINGS,
     evaluatedWeeks: [],
+  }
+}
+
+/** Rellena con valores por defecto cualquier campo que falte en un estado cargado
+ * de localStorage/backend antiguo (p.ej. si se añade un campo nuevo tras un despliegue). */
+export function normalizeState(raw: Partial<AppState> | null | undefined): AppState {
+  if (!raw) return createInitialState()
+  return {
+    ...createInitialState(),
+    ...raw,
+    settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
   }
 }

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AppState, InspectionVote, Settings, User, ZoneId } from '../types'
-import { createInitialState } from '../data/seed'
+import { normalizeState } from '../data/seed'
 import { createLocalStorageAdapter, STORAGE_KEY } from '../lib/storage'
 import { isRemoteSyncConfigured, loadRemoteState, saveRemoteState } from '../lib/remoteStorage'
 import { applyAssignmentsToUsers, generateWeeklyAssignment } from '../lib/assignment'
@@ -8,10 +8,12 @@ import { currentWeekStart, addDays, todayISO } from '../lib/dateUtils'
 import { evaluateWeek } from '../lib/points'
 import { closeMonth as closeMonthLogic } from '../lib/monthSummary'
 import { generateScheduledInspection } from '../lib/inspections'
-import { giveStrike, completePenalty as completePenaltyLogic } from '../lib/strikes'
+import { giveStrike, completePenalty as completePenaltyLogic, revertStrike } from '../lib/strikes'
 import { createIncident, type NewIncidentInput } from '../lib/incidents'
 import { createLostItem, withAutoBoxed, type NewLostItemInput } from '../lib/lostItems'
+import { createExpense, type NewExpenseInput } from '../lib/expenses'
 import { generateId } from '../lib/id'
+import { getRotationZones } from '../lib/zones'
 
 const adapter = createLocalStorageAdapter<AppState>(STORAGE_KEY)
 const REMOTE_SAVE_DEBOUNCE_MS = 600
@@ -25,18 +27,24 @@ interface AppContextValue {
   generateWeek: () => void
   scheduleInspection: () => void
   recordInspectionResult: (votes: InspectionVote[], comments: string, photos: string[]) => void
+  deleteInspection: (id: string) => void
   addIncident: (input: NewIncidentInput) => void
-  convertIncidentToStrike: (incidentId: string) => void
+  convertIncidentToStrike: (incidentId: string, confirmingUserIds: string[]) => void
   resolveIncident: (incidentId: string) => void
+  deleteIncident: (id: string) => void
   addLostItem: (input: NewLostItemInput) => void
   claimLostItem: (id: string, userId: string) => void
   moveLostItemToBox: (id: string) => void
   resolveLostItem: (id: string) => void
   completePenalty: (penaltyId: string) => void
+  undoStrike: (userId: string) => void
+  addExpense: (input: NewExpenseInput) => void
+  deleteExpense: (id: string) => void
   closeMonth: () => void
   updateSettings: (patch: Partial<Settings>) => void
   addUser: (name: string, avatar: string) => void
   updateUser: (id: string, patch: Partial<User>) => void
+  deleteUser: (id: string) => void
   toggleUserActive: (id: string) => void
   toggleZoneActive: (id: ZoneId) => void
 }
@@ -44,7 +52,7 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(() => adapter.load() ?? createInitialState())
+  const [state, setState] = useState<AppState>(() => normalizeState(adapter.load()))
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isRemoteSyncConfigured() ? 'syncing' : 'local-only')
   const remoteConfigured = useRef(isRemoteSyncConfigured())
   const skipNextRemoteSave = useRef(false)
@@ -72,7 +80,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .then((remote) => {
         if (remote) {
           skipNextRemoteSave.current = true
-          setState({ ...remote, lostItems: withAutoBoxed(remote.lostItems) })
+          const normalized = normalizeState(remote)
+          setState({ ...normalized, lostItems: withAutoBoxed(normalized.lostItems) })
         }
         setSyncStatus('synced')
       })
@@ -136,14 +145,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => {
       let working = s
       const weekStart = currentWeekStart(s.settings.weekStartDay)
-      const prevWeekStart = addDays(weekStart, -7)
-      const hasPrevAssignments = s.assignments.some((a) => a.weekStart === prevWeekStart)
-      const alreadyEvaluated = s.evaluatedWeeks.includes(prevWeekStart)
 
-      if (hasPrevAssignments && !alreadyEvaluated) {
-        const prevWeekEnd = addDays(prevWeekStart, 6)
-        const { users } = evaluateWeek(working, prevWeekStart, prevWeekEnd)
-        working = { ...working, users, evaluatedWeeks: [...working.evaluatedWeeks, prevWeekStart] }
+      // Puntúa TODAS las semanas pasadas con asignación que todavía no se hayan
+      // evaluado (no solo la inmediatamente anterior), por si se han saltado
+      // semanas sin pulsar "Generar semana".
+      const pastWeekStarts = Array.from(new Set(working.assignments.map((a) => a.weekStart)))
+        .filter((ws) => ws < weekStart && !working.evaluatedWeeks.includes(ws))
+        .sort()
+
+      for (const ws of pastWeekStarts) {
+        const weAssignment = working.assignments.find((a) => a.weekStart === ws)
+        const weekEnd = weAssignment?.weekEnd ?? addDays(ws, 6)
+        const { users } = evaluateWeek(working, ws, weekEnd)
+        working = { ...working, users, evaluatedWeeks: [...working.evaluatedWeeks, ws] }
       }
 
       // Evita duplicar si ya existe asignación para esta semana.
@@ -206,12 +220,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const deleteInspection = useCallback((id: string) => {
+    setState((s) => {
+      const inspection = s.inspections.find((i) => i.id === id)
+      if (!inspection) return s
+      let users = s.users
+      let penalties = s.penalties
+      if (inspection.strikeGiven && inspection.guardianId) {
+        ;({ users, penalties } = revertStrike(users, penalties, inspection.guardianId, s.settings.strikesThreshold))
+      }
+      return { ...s, users, penalties, inspections: s.inspections.filter((i) => i.id !== id) }
+    })
+  }, [])
+
   const addIncident = useCallback((input: NewIncidentInput) => {
     setState((s) => ({ ...s, incidents: [createIncident(input), ...s.incidents] }))
   }, [])
 
-  const convertIncidentToStrike = useCallback((incidentId: string) => {
+  const deleteIncident = useCallback((id: string) => {
     setState((s) => {
+      const incident = s.incidents.find((i) => i.id === id)
+      if (!incident) return s
+      let users = s.users
+      let penalties = s.penalties
+      if (incident.status === 'convertida_en_strike' && incident.responsibleUserId) {
+        ;({ users, penalties } = revertStrike(users, penalties, incident.responsibleUserId, s.settings.strikesThreshold))
+      }
+      return { ...s, users, penalties, incidents: s.incidents.filter((i) => i.id !== id) }
+    })
+  }, [])
+
+  const convertIncidentToStrike = useCallback((incidentId: string, confirmingUserIds: string[]) => {
+    setState((s) => {
+      // Requiere consenso mínimo de 2 personas confirmando que es motivo de strike.
+      if (confirmingUserIds.length < 2) return s
       const incident = s.incidents.find((i) => i.id === incidentId)
       if (!incident || !incident.responsibleUserId) return s
       const user = s.users.find((u) => u.id === incident.responsibleUserId)
@@ -265,6 +307,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const addExpense = useCallback((input: NewExpenseInput) => {
+    setState((s) => ({ ...s, expenses: [createExpense(input), ...s.expenses] }))
+  }, [])
+
+  const deleteExpense = useCallback((id: string) => {
+    setState((s) => ({ ...s, expenses: s.expenses.filter((e) => e.id !== id) }))
+  }, [])
+
   const completePenalty = useCallback((penaltyId: string) => {
     setState((s) => {
       const penalty = s.penalties.find((p) => p.id === penaltyId)
@@ -277,10 +327,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const undoStrike = useCallback((userId: string) => {
+    setState((s) => {
+      const { users, penalties } = revertStrike(s.users, s.penalties, userId, s.settings.strikesThreshold)
+      return { ...s, users, penalties }
+    })
+  }, [])
+
   const closeMonthAction = useCallback(() => {
     setState((s) => {
       const now = new Date()
-      const { summary, users } = closeMonthLogic(s, now.getMonth() + 1, now.getFullYear())
+      const month = now.getMonth() + 1
+      const year = now.getFullYear()
+      // Evita declarar dos ganadores (y resetear puntos dos veces) el mismo mes.
+      const alreadyClosed = s.monthSummaries.some((m) => m.month === month && m.year === year)
+      if (alreadyClosed) return s
+      const { summary, users } = closeMonthLogic(s, month, year)
       return { ...s, users, monthSummaries: [...s.monthSummaries, summary] }
     })
   }, [])
@@ -313,12 +375,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }))
   }, [])
 
+  const deleteUser = useCallback((id: string) => {
+    setState((s) => ({ ...s, users: s.users.filter((u) => u.id !== id) }))
+  }, [])
+
   const toggleUserActive = useCallback((id: string) => {
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, active: !u.active } : u)) }))
   }, [])
 
   const toggleZoneActive = useCallback((id: ZoneId) => {
-    setState((s) => ({ ...s, zones: s.zones.map((z) => (z.id === id ? { ...z, active: !z.active } : z)) }))
+    setState((s) => {
+      const zone = s.zones.find((z) => z.id === id)
+      // No dejar que se desactive la última zona de rotación activa: dejaría
+      // "Generar semana" sin ninguna zona que repartir.
+      if (zone?.active && getRotationZones(s).length <= 1) return s
+      return { ...s, zones: s.zones.map((z) => (z.id === id ? { ...z, active: !z.active } : z)) }
+    })
   }, [])
 
   const value: AppContextValue = {
@@ -328,18 +400,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     generateWeek,
     scheduleInspection,
     recordInspectionResult,
+    deleteInspection,
     addIncident,
     convertIncidentToStrike,
     resolveIncident,
+    deleteIncident,
     addLostItem,
     claimLostItem,
     moveLostItemToBox,
     resolveLostItem,
     completePenalty,
+    undoStrike,
+    addExpense,
+    deleteExpense,
     closeMonth: closeMonthAction,
     updateSettings,
     addUser,
     updateUser,
+    deleteUser,
     toggleUserActive,
     toggleZoneActive,
   }

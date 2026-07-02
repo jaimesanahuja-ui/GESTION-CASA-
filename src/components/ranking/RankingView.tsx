@@ -15,9 +15,14 @@ export function RankingView() {
   const monthly = [...state.users].sort((a, b) => b.monthlyPoints - a.monthlyPoints)
   const allTime = [...state.users].sort((a, b) => b.totalPoints - a.totalPoints)
   const now = new Date()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
+  const closedThisMonth = state.monthSummaries.some((m) => m.month === month && m.year === year)
   const lastSummary = [...state.monthSummaries].sort((a, b) => (b.year - a.year) * 12 + (b.month - a.month)).at(-1)
+  const lastWinner = lastSummary?.winnerId ? state.users.find((u) => u.id === lastSummary.winnerId) : undefined
 
   function handleCloseMonth() {
+    if (closedThisMonth) return
     if (window.confirm('¿Cerrar el mes y declarar ganador? Los puntos mensuales se reiniciarán a 0.')) {
       closeMonth()
     }
@@ -25,43 +30,52 @@ export function RankingView() {
 
   return (
     <div className="flex flex-col gap-4 pb-4">
-      <Card tone="brand">
-        <div className="mb-2 flex items-center justify-between">
-          <CardTitle className="mb-0">🏆 Ranking de {monthNameEs(now.getMonth() + 1)}</CardTitle>
-          <Button size="sm" onClick={handleCloseMonth}>
-            🏁 Cerrar mes
-          </Button>
-        </div>
+      <div>
+        <p className="mb-2 text-[10px] font-bold tracking-[0.08em] text-ink-500 uppercase">
+          Ranking {monthNameEs(month)} 🏆
+        </p>
         {monthly.every((u) => u.monthlyPoints === 0) ? (
           <EmptyState icon="🏆" text="Todavía nadie tiene puntos este mes. Pasa la semana sin incidencias graves para sumar." />
         ) : (
-          <ol className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             {monthly.map((u, i) => (
-              <li key={u.id} className="flex items-center justify-between rounded-lg bg-brand-50 px-3 py-2">
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  <span className="w-6 text-center">{MEDALS[i] ?? i + 1}</span>
-                  <Avatar name={u.name} avatar={u.avatar} size="sm" />
-                  {u.name}
+              <div
+                key={u.id}
+                className={`flex items-center gap-3 rounded-2xl p-3.5 ${
+                  i === 0
+                    ? 'border-[1.5px] border-brand-500/18'
+                    : 'bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
+                }`}
+                style={i === 0 ? { background: 'linear-gradient(135deg,#FFF0EB,#FFE8DF)' } : undefined}
+              >
+                <span className="w-6 text-center text-lg">{MEDALS[i] ?? `${i + 1}️⃣`}</span>
+                <Avatar name={u.name} avatar={u.avatar} />
+                <span className="flex-1 truncate text-sm font-semibold text-ink-900">{u.name}</span>
+                <span className="text-2xl leading-none font-extrabold tracking-tight text-brand-500">
+                  {u.monthlyPoints}
+                  <span className="ml-0.5 text-[10px] font-medium text-ink-500">pts</span>
                 </span>
-                <Badge tone="brand">{u.monthlyPoints} pts</Badge>
-              </li>
+              </div>
             ))}
-          </ol>
+          </div>
         )}
         <p className="mt-3 text-xs text-ink-500">Premio del mes: {state.settings.monthlyReward}</p>
-      </Card>
+        <Button className="mt-3 w-full" disabled={closedThisMonth} onClick={handleCloseMonth}>
+          {closedThisMonth ? '✓ Mes ya cerrado' : '🏁 Cerrar mes'}
+        </Button>
+      </div>
 
       {lastSummary && (
         <Card>
           <CardTitle>
-            📣 Última cierre — {monthNameEs(lastSummary.month)} {lastSummary.year}
+            📣 Último cierre — {monthNameEs(lastSummary.month)} {lastSummary.year}
           </CardTitle>
-          {lastSummary.winnerId ? (
+          {lastWinner ? (
             <CopyableMessage
               text={monthlyWinnerMessage(
                 state,
-                state.users.find((u) => u.id === lastSummary.winnerId)!,
-                lastSummary.pointsByUser[lastSummary.winnerId] ?? 0,
+                lastWinner,
+                lastSummary.pointsByUser[lastWinner.id] ?? 0,
                 lastSummary.month,
                 lastSummary.year,
               )}
@@ -81,11 +95,29 @@ export function RankingView() {
                 <span className="w-5 text-center text-xs text-ink-500">{i + 1}</span>
                 {u.name}
               </span>
-              <span className="text-sm font-bold text-brand-700">{u.totalPoints}</span>
+              <span className="text-sm font-bold text-brand-500">{u.totalPoints}</span>
             </li>
           ))}
         </ol>
       </Card>
+
+      {state.users.some((u) => u.strikes > 0) && (
+        <Card>
+          <CardTitle>⚠️ Recordatorio</CardTitle>
+          <div className="flex flex-col gap-2">
+            {state.users
+              .filter((u) => u.strikes > 0)
+              .map((u) => (
+                <div key={u.id} className="flex items-center justify-between rounded-[10px] bg-brand-50 px-3 py-2">
+                  <span className="text-sm font-semibold text-ink-900">{u.name}</span>
+                  <Badge tone="brand">
+                    {u.strikes}/{state.settings.strikesThreshold} strikes
+                  </Badge>
+                </div>
+              ))}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

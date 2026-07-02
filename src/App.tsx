@@ -10,17 +10,18 @@ import { IncidentsView } from './components/incidents/IncidentsView'
 import { LostItemsView } from './components/lostitems/LostItemsView'
 import { RankingView } from './components/ranking/RankingView'
 import { StrikesView } from './components/strikes/StrikesView'
+import { ExpensesView } from './components/expenses/ExpensesView'
 import { SettingsView } from './components/settings/SettingsView'
 
 function Shell() {
-  const { state, syncStatus } = useApp()
+  const { state, currentWeekStartDate } = useApp()
   const [tab, setTab] = useState<TabId>('dashboard')
 
   return (
     <div className="flex min-h-svh flex-col sm:flex-row">
       <TabBar active={tab} onChange={setTab} />
       <div className="flex-1">
-        <Header houseName={state.settings.houseName} syncStatus={syncStatus} />
+        <Header state={state} currentWeekStartDate={currentWeekStartDate} />
         <main className="mx-auto max-w-3xl px-4 pt-4 pb-24 sm:px-6 sm:pb-8">
           {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
           {tab === 'guardians' && <GuardiansView />}
@@ -29,6 +30,7 @@ function Shell() {
           {tab === 'lostitems' && <LostItemsView />}
           {tab === 'ranking' && <RankingView />}
           {tab === 'strikes' && <StrikesView />}
+          {tab === 'expenses' && <ExpensesView />}
           {tab === 'settings' && <SettingsView />}
         </main>
       </div>

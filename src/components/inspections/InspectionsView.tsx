@@ -11,8 +11,14 @@ import { zoneLabel } from '../../lib/zones'
 import { inspectionMessage } from '../../lib/messages'
 
 export function InspectionsView() {
-  const { state, scheduleInspection } = useApp()
+  const { state, scheduleInspection, deleteInspection } = useApp()
   const [voting, setVoting] = useState(false)
+
+  function handleDelete(id: string) {
+    if (window.confirm('¿Eliminar esta inspección? Si dio un strike, también se deshace. No se puede deshacer esta acción.')) {
+      deleteInspection(id)
+    }
+  }
 
   const scheduled = state.scheduledInspection
   const history = [...state.inspections].sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1))
@@ -67,13 +73,22 @@ export function InspectionsView() {
               const guardian = i.guardianId ? state.users.find((u) => u.id === i.guardianId) : null
               return (
                 <li key={i.id} className="border-t border-brand-100 pt-3 first:border-0 first:pt-0">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-bold">
                       {formatDateEs(i.date)} · {zoneLabel(state, i.zoneId)}
                     </p>
-                    <Badge tone={i.status === 'falla' ? 'danger' : 'ok'}>
-                      {i.status === 'falla' ? '❌ Falla' : '✅ Pasa'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge tone={i.status === 'falla' ? 'danger' : 'ok'}>
+                        {i.status === 'falla' ? '❌ Falla' : '✅ Pasa'}
+                      </Badge>
+                      <button
+                        onClick={() => handleDelete(i.id)}
+                        className="text-danger-500 hover:text-danger-600"
+                        aria-label="Eliminar inspección"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                   {guardian && <p className="text-xs text-ink-500">Guardián: {guardian.name}</p>}
                   {i.comments && <p className="mt-1 text-sm text-ink-700">"{i.comments}"</p>}

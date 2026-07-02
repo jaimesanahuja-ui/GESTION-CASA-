@@ -60,6 +60,15 @@ export function monthNameEs(month: number): string {
   return MONTHS_ES[month - 1]
 }
 
+const MONTHS_ES_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+/** Formato compacto para la cabecera, ej. "2 jul → 9 jul". */
+export function formatShortRangeEs(startIso: string, endIso: string): string {
+  const start = parseISODate(startIso)
+  const end = parseISODate(endIso)
+  return `${start.getDate()} ${MONTHS_ES_SHORT[start.getMonth()]} → ${end.getDate()} ${MONTHS_ES_SHORT[end.getMonth()]}`
+}
+
 export function todayISO(): string {
   return toISODate(new Date())
 }
