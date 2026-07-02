@@ -13,7 +13,7 @@ Quien ensucia, limpia. El guardián supervisa, no es el mayordomo.
 - Vite
 - Persistencia en `localStorage` por defecto (cada dispositivo guarda sus propios datos)
 - Opcionalmente, sincronización compartida entre todos los compañeros de piso vía un
-  endpoint serverless de Vercel (`api/state.ts`) + Redis (Upstash) — ver más abajo
+  endpoint serverless de Vercel (`api/state.ts`) + Postgres (Neon) — ver más abajo
 
 ## Arrancar en local
 
@@ -65,11 +65,12 @@ móvil/navegador** — no es una casa compartida todavía.
 ## Desplegar en Vercel con datos compartidos
 
 Para que Jaime, Alberto, Richie y Mario vean y editen la misma casa desde sus propios
-móviles, la app puede desplegarse en Vercel con una base de datos Redis (Upstash) detrás
+móviles, la app puede desplegarse en Vercel con una base de datos Postgres (Neon) detrás
 de un endpoint serverless (`api/state.ts`) que guarda un único "blob" con todo el estado
-de la casa. La app sigue funcionando exactamente igual (mismas pantallas, mismos
-botones); simplemente, en lugar de leer/escribir solo `localStorage`, también sincroniza
-con ese endpoint (con `localStorage` como caché y modo sin conexión).
+de la casa (en una tabla `guardianes_kv` que el propio endpoint crea sola la primera
+vez). La app sigue funcionando exactamente igual (mismas pantallas, mismos botones);
+simplemente, en lugar de leer/escribir solo `localStorage`, también sincroniza con ese
+endpoint (con `localStorage` como caché y modo sin conexión).
 
 ### 1. Sube el proyecto a Vercel
 
@@ -78,12 +79,13 @@ con ese endpoint (con `localStorage` como caché y modo sin conexión).
 - Framework preset: Vercel detecta Vite automáticamente. Build command `vite build`,
   output `dist` (no hace falta tocar nada).
 
-### 2. Añade una base de datos Redis (Upstash)
+### 2. Añade una base de datos Postgres (Neon)
 
-- En el proyecto de Vercel: pestaña **Storage → Create Database → Redis** (proveedor
-  Upstash, tiene plan gratuito de sobra para esto).
-- Conéctala al proyecto. Esto añade automáticamente las variables de entorno
-  `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` que usa `api/state.ts`.
+- En el proyecto de Vercel: pestaña **Storage → Create Database → Postgres** (proveedor
+  Neon, tiene plan gratuito de sobra para esto).
+- Conéctala al proyecto. Esto añade automáticamente un buen puñado de variables de
+  entorno (`DATABASE_URL`, `POSTGRES_URL`, `PGHOST`…); `api/state.ts` solo necesita
+  `DATABASE_URL`, que siempre viene incluida.
 
 ### 3. Configura el token compartido
 
@@ -127,9 +129,10 @@ conexión) que confirma si el dispositivo está hablando con el backend comparti
 ### Notas y límites conocidos
 
 - Todo el estado —incluidas las fotos comprimidas en base64— se guarda como un único
-  valor en Redis. Con un uso normal de piso compartido va sobrado, pero si algún día
-  acumuláis muchísimas fotos de incidencias, lo lógico sería mover las imágenes a un
-  almacenamiento de objetos aparte (p. ej. Vercel Blob) en vez de este único blob JSON.
+  valor `jsonb` en Postgres. Con un uso normal de piso compartido va sobrado, pero si
+  algún día acumuláis muchísimas fotos de incidencias, lo lógico sería mover las
+  imágenes a un almacenamiento de objetos aparte (p. ej. Vercel Blob) en vez de este
+  único blob JSON.
 - `SYNC_TOKEN` es una protección ligera para que nadie que encuentre la URL pública de
   Vercel pueda leer o borrar los datos de la casa por casualidad; no es un sistema de
   login por persona.

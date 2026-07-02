@@ -1,12 +1,12 @@
 // Endpoint serverless de Vercel: guarda el estado completo de la casa como un
-// único blob JSON en Redis (Upstash), para que todos los compañeros de piso
+// único blob JSON en Postgres (Neon), para que todos los compañeros de piso
 // vean los mismos datos desde sus propios móviles/navegadores.
 //
 // Variables de entorno necesarias en el proyecto de Vercel:
-// - UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (integración de Storage → Redis/Upstash)
+// - DATABASE_URL (la añade sola la integración de Neon en Storage → Postgres)
 // - SYNC_TOKEN: cualquier cadena secreta que elijas, para que no cualquiera en
 //   internet pueda leer/machacar el estado de tu casa.
-import { Redis } from '@upstash/redis'
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
 // Tipos mínimos propios en vez de depender de @vercel/node (evita arrastrar
 // su cadena de dependencias solo por un par de interfaces).
@@ -24,10 +24,6 @@ interface MinimalResponse {
 
 const STATE_KEY = 'guardianes-de-la-casa:state:v1'
 
-function getRedis(): Redis {
-  return Redis.fromEnv()
-}
-
 function checkAuth(req: MinimalRequest): boolean {
   const expected = process.env.SYNC_TOKEN
   if (!expected) return false // sin token configurado, el endpoint se niega por seguridad
@@ -36,17 +32,33 @@ function checkAuth(req: MinimalRequest): boolean {
   return provided === expected
 }
 
+async function ensureTable(sql: NeonQueryFunction<false, false>) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS guardianes_kv (
+      key text PRIMARY KEY,
+      value jsonb NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `
+}
+
 export default async function handler(req: MinimalRequest, res: MinimalResponse) {
   if (!checkAuth(req)) {
     res.status(401).json({ error: 'No autorizado. Configura SYNC_TOKEN y VITE_SYNC_TOKEN en Vercel.' })
     return
   }
 
-  const redis = getRedis()
+  const databaseUrl = process.env.DATABASE_URL
+  if (!databaseUrl) {
+    res.status(500).json({ error: 'Falta DATABASE_URL. Conecta una base de datos Postgres (Neon) al proyecto.' })
+    return
+  }
+  const sql = neon(databaseUrl)
 
   if (req.method === 'GET') {
-    const state = await redis.get(STATE_KEY)
-    res.status(200).json({ state: state ?? null })
+    await ensureTable(sql)
+    const rows = await sql`SELECT value FROM guardianes_kv WHERE key = ${STATE_KEY}`
+    res.status(200).json({ state: rows[0]?.value ?? null })
     return
   }
 
@@ -56,7 +68,12 @@ export default async function handler(req: MinimalRequest, res: MinimalResponse)
       res.status(400).json({ error: 'Falta "state" en el cuerpo de la petición.' })
       return
     }
-    await redis.set(STATE_KEY, body.state)
+    await ensureTable(sql)
+    await sql`
+      INSERT INTO guardianes_kv (key, value, updated_at)
+      VALUES (${STATE_KEY}, ${JSON.stringify(body.state)}::jsonb, now())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+    `
     res.status(200).json({ ok: true })
     return
   }
