@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AppState, InspectionVote, Settings, User, ZoneId } from '../types'
 import { createInitialState } from '../data/seed'
 import { createLocalStorageAdapter, STORAGE_KEY } from '../lib/storage'
+import { isRemoteSyncConfigured, loadRemoteState, saveRemoteState } from '../lib/remoteStorage'
 import { applyAssignmentsToUsers, generateWeeklyAssignment } from '../lib/assignment'
 import { currentWeekStart, addDays, todayISO } from '../lib/dateUtils'
 import { evaluateWeek } from '../lib/points'
@@ -13,9 +14,13 @@ import { createLostItem, withAutoBoxed, type NewLostItemInput } from '../lib/los
 import { generateId } from '../lib/id'
 
 const adapter = createLocalStorageAdapter<AppState>(STORAGE_KEY)
+const REMOTE_SAVE_DEBOUNCE_MS = 600
+
+export type SyncStatus = 'local-only' | 'syncing' | 'synced' | 'offline'
 
 interface AppContextValue {
   state: AppState
+  syncStatus: SyncStatus
   currentWeekStartDate: string
   generateWeek: () => void
   scheduleInspection: () => void
@@ -40,7 +45,16 @@ const AppContext = createContext<AppContextValue | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(() => adapter.load() ?? createInitialState())
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(isRemoteSyncConfigured() ? 'syncing' : 'local-only')
+  const remoteConfigured = useRef(isRemoteSyncConfigured())
+  const skipNextRemoteSave = useRef(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // No hay que empujar nada al backend hasta haber intentado al menos una vez traer
+  // los datos compartidos: si no, un móvil con conexión lenta podría machacar la casa
+  // compartida con su propio estado local/semilla antes de enterarse de que ya existía.
+  const [hydratedFromRemote, setHydratedFromRemote] = useState(!isRemoteSyncConfigured())
 
+  // Guardado local: siempre, al instante, sirve de caché/offline.
   useEffect(() => {
     adapter.save(state)
   }, [state])
@@ -50,6 +64,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, lostItems: withAutoBoxed(s.lostItems) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sincronización remota (varios compañeros de piso compartiendo la misma casa vía Vercel).
+  const pullFromRemote = useCallback((markHydrated = false) => {
+    if (!remoteConfigured.current) return
+    loadRemoteState<AppState>()
+      .then((remote) => {
+        if (remote) {
+          skipNextRemoteSave.current = true
+          setState({ ...remote, lostItems: withAutoBoxed(remote.lostItems) })
+        }
+        setSyncStatus('synced')
+      })
+      .catch(() => setSyncStatus('offline'))
+      .finally(() => {
+        if (markHydrated) setHydratedFromRemote(true)
+      })
+  }, [])
+
+  // Carga inicial desde el backend compartido (si está configurado).
+  useEffect(() => {
+    pullFromRemote(true)
+  }, [pullFromRemote])
+
+  // Al volver a la app (cambio de pestaña o de app en el móvil), refresca por si algún
+  // compañero de piso ha cambiado algo mientras tanto.
+  useEffect(() => {
+    if (!remoteConfigured.current) return
+    function onVisibility() {
+      if (document.visibilityState === 'visible') pullFromRemote()
+    }
+    function onFocus() {
+      pullFromRemote()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [pullFromRemote])
+
+  // Empuja los cambios locales al backend compartido, con un pequeño debounce
+  // para no disparar una petición por cada tecla/click. No hace nada hasta que
+  // la carga inicial desde el backend haya terminado (ver hydratedFromRemote).
+  useEffect(() => {
+    if (!remoteConfigured.current) return
+    if (!hydratedFromRemote) return
+    if (skipNextRemoteSave.current) {
+      skipNextRemoteSave.current = false
+      return
+    }
+    setSyncStatus('syncing')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveRemoteState(state)
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('offline'))
+    }, REMOTE_SAVE_DEBOUNCE_MS)
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [state, hydratedFromRemote])
 
   const currentWeekStartDate = useMemo(
     () => currentWeekStart(state.settings.weekStartDay),
@@ -247,6 +323,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value: AppContextValue = {
     state,
+    syncStatus,
     currentWeekStartDate,
     generateWeek,
     scheduleInspection,

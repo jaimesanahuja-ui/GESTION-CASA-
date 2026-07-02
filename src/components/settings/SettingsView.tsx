@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useApp } from '../../state/AppContext'
 import { Card, CardTitle } from '../ui/Card'
+import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { Avatar } from '../ui/Avatar'
 import { getConfigurableZones } from '../../lib/zones'
+import { isRemoteSyncConfigured } from '../../lib/remoteStorage'
 
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
@@ -25,13 +27,37 @@ const FIELD = 'w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text
 const LABEL = 'mb-1 block text-xs font-semibold text-ink-500'
 
 export function SettingsView() {
-  const { state, updateSettings, addUser, updateUser, toggleUserActive, toggleZoneActive } = useApp()
+  const { state, syncStatus, updateSettings, addUser, updateUser, toggleUserActive, toggleZoneActive } = useApp()
   const [newUserName, setNewUserName] = useState('')
   const [newUserAvatar, setNewUserAvatar] = useState('')
   const zones = getConfigurableZones(state)
+  const remoteConfigured = isRemoteSyncConfigured()
 
   return (
     <div className="flex flex-col gap-4 pb-4">
+      <Card>
+        <CardTitle>☁️ Sincronización entre dispositivos</CardTitle>
+        {remoteConfigured ? (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-ink-700">
+              Todos los compañeros de piso que abran esta misma URL ven y editan la misma casa.
+            </p>
+            <Badge tone={syncStatus === 'offline' ? 'danger' : syncStatus === 'syncing' ? 'warn' : 'ok'}>
+              {syncStatus === 'synced' && '☁️ Sincronizado'}
+              {syncStatus === 'syncing' && '☁️ Sincronizando'}
+              {syncStatus === 'offline' && '⚠️ Sin conexión'}
+              {syncStatus === 'local-only' && '📴 Local'}
+            </Badge>
+          </div>
+        ) : (
+          <p className="text-sm text-ink-700">
+            De momento cada dispositivo guarda sus propios datos (localStorage). Para compartir la casa entre todo
+            el piso, despliega la app en Vercel con una base de datos Redis (ver README, sección "Desplegar en
+            Vercel con datos compartidos").
+          </p>
+        )}
+      </Card>
+
       <Card>
         <CardTitle>🏠 La casa</CardTitle>
         <label className={LABEL}>Nombre de la casa</label>
