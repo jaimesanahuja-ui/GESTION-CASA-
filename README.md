@@ -126,6 +126,33 @@ conexión) que confirma si el dispositivo está hablando con el backend comparti
 - Si el backend no responde (sin internet, no configurado…), la app sigue funcionando
   con la copia local en `localStorage` sin romperse.
 
+## Instalarla como app en el móvil
+
+La app es una PWA (Progressive Web App): se puede "instalar" desde el navegador para que
+abra a pantalla completa, con su propio icono en el escritorio/pantalla de inicio, sin
+barra de direcciones — se ve y se siente como una app nativa, aunque siga siendo la
+misma web.
+
+**Android (Chrome):**
+
+1. Abre la URL de Vercel en Chrome.
+2. Menú `⋮` (arriba a la derecha) → **Añadir a pantalla de inicio** (o puede que Chrome
+   te muestre solo un banner "Instalar app" — dale a Instalar).
+3. Aparece un icono como cualquier otra app; al abrirlo no se ve la interfaz de Chrome.
+
+**iPhone (Safari — tiene que ser Safari, no Chrome ni otro navegador):**
+
+1. Abre la URL de Vercel en Safari.
+2. Botón de compartir (el cuadrado con la flecha hacia arriba, abajo en el centro).
+3. Desplázate y toca **Añadir a pantalla de inicio**.
+4. Confirma el nombre ("Guardianes") y **Añadir**.
+
+Una vez instalada, sigue funcionando exactamente igual (misma sincronización, mismos
+datos) — la diferencia es solo visual/de acceso. Como es una PWA con service worker, la
+carga inicial de la app (HTML/CSS/JS) también queda cacheada para que abra rápido incluso
+con mala cobertura; el estado de la casa en sí sigue yendo siempre a `/api/state` en
+directo (nunca se sirve una copia vieja desde caché).
+
 ### Notas y límites conocidos
 
 - Todo el estado —incluidas las fotos comprimidas en base64— se guarda como un único
